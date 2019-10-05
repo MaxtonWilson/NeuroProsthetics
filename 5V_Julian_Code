@@ -1,0 +1,149 @@
+ /*Michael Code [4/17/19] */
+
+#include <Servo.h>
+#define TI_SERVO_PIN 11//11
+#define MRP_SERVO_PIN 10 //10
+#define MOSFET_PIN_1 13//13
+#define MOSFET_PIN_2 3//3
+#define MYO_PIN A1//A2
+#define OPEN 0
+#define CLOSE 180 
+#define PULSEWIDTH 50 //in ms
+#define TRAVELDELAY 650 //in ms
+#define SYSTEMDELAY 1200 // was 1500
+#define THRESH 300 //550, (0,1024)
+#define RELAXTHRESH 275 // 275, 550 
+#define LED_PIN_R 7//Red
+#define LED_PIN_G 4//Green
+#define LED_PIN_B 6//Blue
+#define LED_IN A0 // LED input
+
+#define RED_THRESH 675
+#define YELLOW_THRESH 757
+#define GREEN_THRESH 859 //unnecessary but here for uniformity
+
+// #define the location of the new stuff, and probably change the old stuff
+
+Servo ti_servo; // controls thumb and index.
+Servo mrp_servo; // controls middle, ring, pinky fingers.
+int ti_pos = OPEN;// position of ti_servo.
+int mrp_pos = OPEN;//position of mrp_servo.
+short mos_1 = MOSFET_PIN_1; //mosfet that goes with the TI servo.
+short mos_2 = MOSFET_PIN_2; //mosfet that goes with the MRP servo.
+short flex_count = 0;
+int volt_reg = 0; //input to display battery level
+
+void setup() {
+  //Setup IO
+  ti_servo.attach(TI_SERVO_PIN);
+  mrp_servo.attach(MRP_SERVO_PIN);
+  pinMode(MOSFET_PIN_1, OUTPUT);
+  pinMode(MOSFET_PIN_2, OUTPUT);
+  pinMode(LED_PIN_R, OUTPUT);
+  pinMode(LED_PIN_G, OUTPUT);
+  pinMode(LED_PIN_B, OUTPUT);
+  pinMode(LED_IN, INPUT);
+  //Set Initial State
+  digitalWrite(MOSFET_PIN_1,HIGH);
+  digitalWrite(MOSFET_PIN_2,HIGH);
+  ti_servo.write(OPEN);
+  mrp_servo.write(OPEN);
+  delay(TRAVELDELAY);
+  digitalWrite(MOSFET_PIN_1,LOW);
+  digitalWrite(MOSFET_PIN_2, LOW);
+  Serial.begin(9600);
+  digitalWrite(LED_PIN_R, LOW);
+  digitalWrite(LED_PIN_G, LOW);
+  digitalWrite(LED_PIN_B, LOW);
+}
+/*
+ * I've been reading through the Piccolo.pde file from the demo listed in the website: https://learn.adafruit.com/piccolo/code
+ * Currently, I believe we should be able to use a variation of the logic from lines 145-162 to grab our stuff. I'm not 100% 
+ * sure about if they are using stuff from Adafruit_GFX.h and avr/pgmspace.h functionalities and what part of the code
+ * is from them. Some of the filtering stats will need to be changed to fit our data. Lines 66-104 seem to be specific to 
+ * their use of FFT, but I'm not entirely sure. In particular, I'm not sure about their noise filter.
+*/
+void servo_logic(int &pos, Servo &servo, int mos){
+  if (pos == OPEN){
+    digitalWrite(mos,HIGH);    
+    pos = CLOSE;
+    servo.write(CLOSE);
+    delay(TRAVELDELAY);
+    //\Serial.println("Closed motor connected to mosfet pin at: ");
+    //\Serial.println(mos);
+    //digitalWrite(mos,LOW);
+  }
+  //CLOSE to OPEN
+  else {
+    //digitalWrite(mos,HIGH);
+    pos = OPEN;
+    servo.write(OPEN);
+    delay(TRAVELDELAY);
+    //\Serial.println("Opened motor connected to mosfet pin at: ");
+    //\Serial.println(mos);
+    digitalWrite(mos,LOW);
+  }
+}
+
+void loop() {
+  int count;
+  volt_reg = analogRead(LED_IN);
+  //\Serial.print("Volt reg: ");
+  //\Serial.println(volt_reg);
+  if (volt_reg < RED_THRESH) {
+    digitalWrite(LED_PIN_R, HIGH);
+    digitalWrite(LED_PIN_G, LOW);
+    digitalWrite(LED_PIN_B, LOW);
+  }
+  else if (volt_reg < YELLOW_THRESH) {
+    digitalWrite(LED_PIN_R, HIGH);
+    digitalWrite(LED_PIN_G, HIGH);
+    digitalWrite(LED_PIN_B, LOW);
+  }
+  else { //(volt_reg <= GREEN_THRESH)
+    digitalWrite(LED_PIN_R, LOW);
+    digitalWrite(LED_PIN_G, HIGH);
+    digitalWrite(LED_PIN_B, LOW);
+  }
+  
+  //Wait for Muscle Signal
+  while (analogRead(MYO_PIN) < THRESH) {
+    //\Serial.println(analogRead(MYO_PIN));
+  }
+
+  // Make purple while in use
+  digitalWrite(LED_PIN_R, HIGH);
+  digitalWrite(LED_PIN_G, LOW);
+  digitalWrite(LED_PIN_B, HIGH);
+
+  //Count up Signal Width 
+  count = 0;
+  while (analogRead(MYO_PIN) > THRESH) {
+    delay(1);
+    count += 1;
+    if (count >= PULSEWIDTH) { break; } // do we need the break statement if the function is defined?
+  }
+
+  //Toggle Servo Logic  
+  //Keep Signal to Actuation Delay around 1 second.
+  if (count >= PULSEWIDTH){
+    if (flex_count %4 ==0 || flex_count %4 ==2) {
+      // 0: close thumb and index to get open mrp only position
+      // 2: open thumb and index finger - finger gun
+      servo_logic(ti_pos, ti_servo, mos_1); 
+      delay(SYSTEMDELAY-PULSEWIDTH-TRAVELDELAY);
+    }
+    else if (flex_count %4 == 1 || flex_count %4 == 3) {
+      // 1: close mrp to get closed hand
+      // 3: open entire hand by opening middle, ring, and pinky fingers.
+      servo_logic(mrp_pos, mrp_servo, mos_2); 
+      delay(SYSTEMDELAY-PULSEWIDTH-TRAVELDELAY);
+    }
+    ++flex_count;
+  }
+
+  //Wait for arm to relax again
+  while (analogRead(MYO_PIN) > RELAXTHRESH) {
+  }
+ 
+}

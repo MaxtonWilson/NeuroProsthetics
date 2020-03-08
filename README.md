@@ -1,2 +1,2 @@
 # NeuroProsthetics
-See https://github.com/MichiganNeuroProsthetics/peakDetection for updated files.
+See https://github.com/MichiganNeuroProsthetics/ for updated files.
